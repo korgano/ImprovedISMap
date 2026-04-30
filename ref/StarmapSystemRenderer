@@ -1,0 +1,577 @@
+using System;
+using System.Collections;
+using UnityEngine;
+
+namespace BattleTech
+{
+	// Token: 0x02001022 RID: 4130
+	public class StarmapSystemRenderer : MonoBehaviour
+	{
+		// Token: 0x17001819 RID: 6169
+		// (get) Token: 0x06008AA3 RID: 35491 RVA: 0x0023619A File Offset: 0x0023439A
+		private static MaterialPropertyBlock mpb
+		{
+			get
+			{
+				if (StarmapSystemRenderer._mpb == null)
+				{
+					StarmapSystemRenderer._mpb = new MaterialPropertyBlock();
+				}
+				return StarmapSystemRenderer._mpb;
+			}
+		}
+
+		// Token: 0x1700181A RID: 6170
+		// (get) Token: 0x06008AA4 RID: 35492 RVA: 0x002361B2 File Offset: 0x002343B2
+		// (set) Token: 0x06008AA5 RID: 35493 RVA: 0x002361BA File Offset: 0x002343BA
+		public bool CanTravel { get; private set; }
+
+		// Token: 0x1700181B RID: 6171
+		// (get) Token: 0x06008AA6 RID: 35494 RVA: 0x002361C3 File Offset: 0x002343C3
+		// (set) Token: 0x06008AA7 RID: 35495 RVA: 0x002361CB File Offset: 0x002343CB
+		public bool IsSelected { get; private set; }
+
+		// Token: 0x06008AA8 RID: 35496 RVA: 0x002361D4 File Offset: 0x002343D4
+		public bool Init(StarSystemNode sys, Color color, bool isAllowed, bool hasBeenVisited)
+		{
+			this.interactionCollider.size = StarmapSystemRenderer.NormalColliderSize;
+			bool flag = this.systemColor != color || this.CanTravel != isAllowed;
+			this.IsSelected = false;
+			this.system = sys;
+			base.transform.position = StarmapRenderer.NormalizeToMapSpace(sys.NormalizedPosition);
+			this.systemColor = color;
+			this.currentlyShowingBiome = Biome.BIOMESKIN.UNDEFINED;
+			this.highlightObjSelected = null;
+			this.UpdateVisited(hasBeenVisited);
+			StarmapSystemRenderer.mpb.Clear();
+			StarmapSystemRenderer.mpb.SetColor("_Color", this.systemColor * new Color(2f, 2f, 2f));
+			this.starInner.SetPropertyBlock(StarmapSystemRenderer.mpb);
+			this.starInnerUnvisited.SetPropertyBlock(StarmapSystemRenderer.mpb);
+			StarmapSystemRenderer.mpb.SetColor("_Color", this.systemColor);
+			this.starOuter.SetPropertyBlock(StarmapSystemRenderer.mpb);
+			this.starOuter.enabled = isAllowed;
+			this.CanTravel = isAllowed;
+			this.ResetSpecialIndicators();
+			return flag;
+		}
+
+		// Token: 0x06008AA9 RID: 35497 RVA: 0x002362E5 File Offset: 0x002344E5
+		public bool IsHightlightActive(bool includeNormalBiome)
+		{
+			return (includeNormalBiome && this.currentlyShowingBiome == Biome.BIOMESKIN.generic) || (this.currentlyShowingBiome != Biome.BIOMESKIN.UNDEFINED && this.currentlyShowingBiome != Biome.BIOMESKIN.generic) || !string.IsNullOrEmpty(this.priorityStoreFilter);
+		}
+
+		// Token: 0x06008AAA RID: 35498 RVA: 0x00236318 File Offset: 0x00234518
+		public void UpdateVisited(bool hasBeenVisited)
+		{
+			this.beenVisited = hasBeenVisited;
+			this.SetStarVisibility(true);
+		}
+
+		// Token: 0x06008AAB RID: 35499 RVA: 0x00236328 File Offset: 0x00234528
+		private void SetStarVisibility(bool starOn)
+		{
+			if (!starOn)
+			{
+				this.starInner.gameObject.SetActive(false);
+				this.starInnerUnvisited.gameObject.SetActive(false);
+				return;
+			}
+			this.starInner.gameObject.SetActive(this.beenVisited);
+			this.starInnerUnvisited.gameObject.SetActive(!this.beenVisited);
+		}
+
+		// Token: 0x06008AAC RID: 35500 RVA: 0x0023638C File Offset: 0x0023458C
+		public void ResetSpecialIndicators()
+		{
+			this.SetStarVisibility(true);
+			this.SetFlashpointAvailable(false);
+			this.SetFlashpointActive(false);
+			this.SetFlashpointMiniCampaign(false);
+			this.SetFactionCapital(FactionEnumeration.GetNoFactionValue());
+			this.SetBlackMarket(false);
+			this.SetBiome(Biome.BIOMESKIN.UNDEFINED);
+			this.SetStore("");
+			this.ShowCurrentHighlightedObject();
+		}
+
+		// Token: 0x06008AAD RID: 35501 RVA: 0x002363DF File Offset: 0x002345DF
+		public void SetArgo(bool state)
+		{
+			if (this.argoMarker.gameObject.activeSelf != state)
+			{
+				this.argoMarker.gameObject.SetActive(state);
+			}
+		}
+
+		// Token: 0x06008AAE RID: 35502 RVA: 0x00236405 File Offset: 0x00234605
+		public void SetNotification(bool state)
+		{
+			if (this.notificationMarker.gameObject.activeSelf != state)
+			{
+				this.notificationMarker.gameObject.SetActive(state);
+			}
+		}
+
+		// Token: 0x06008AAF RID: 35503 RVA: 0x0023642C File Offset: 0x0023462C
+		public void SetFlashpointAvailable(bool state)
+		{
+			if (state)
+			{
+				if (this.flashpointAvailableLocal == null)
+				{
+					this.flashpointAvailableLocal = Object.Instantiate<GameObject>(this.flashpointAvailableObj, base.transform, false);
+					return;
+				}
+			}
+			else if (this.flashpointAvailableLocal != null)
+			{
+				Object.Destroy(this.flashpointAvailableLocal);
+				this.flashpointAvailableLocal = null;
+			}
+		}
+
+		// Token: 0x06008AB0 RID: 35504 RVA: 0x00236484 File Offset: 0x00234684
+		public void SetFlashpointActive(bool state)
+		{
+			if (state)
+			{
+				if (this.flashpointActiveLocal == null)
+				{
+					this.flashpointActiveLocal = Object.Instantiate<GameObject>(this.flashpointActiveObj, base.transform, false);
+					return;
+				}
+			}
+			else if (this.flashpointActiveLocal != null)
+			{
+				Object.Destroy(this.flashpointActiveLocal);
+				this.flashpointActiveLocal = null;
+			}
+		}
+
+		// Token: 0x06008AB1 RID: 35505 RVA: 0x002364DC File Offset: 0x002346DC
+		public void SetFlashpointMiniCampaign(bool state)
+		{
+			if (state)
+			{
+				if (this.flashpointMiniCampaignLocal == null)
+				{
+					this.flashpointMiniCampaignLocal = Object.Instantiate<GameObject>(this.flashpointMiniCampaignObj, base.transform, false);
+					return;
+				}
+			}
+			else if (this.flashpointMiniCampaignLocal != null)
+			{
+				Object.Destroy(this.flashpointMiniCampaignLocal);
+				this.flashpointMiniCampaignLocal = null;
+			}
+		}
+
+		// Token: 0x06008AB2 RID: 35506 RVA: 0x00236534 File Offset: 0x00234734
+		public void SetFactionCapital(FactionValue faction)
+		{
+			if (this.currentFactionObj != null)
+			{
+				this.currentFactionObj.SetActive(false);
+				Object.Destroy(this.currentFactionObj);
+				this.currentFactionObj = null;
+			}
+			bool flag = false;
+			string name = faction.Name;
+			uint num = <PrivateImplementationDetails>.ComputeStringHash(name);
+			if (num <= 2084391550U)
+			{
+				if (num <= 1033217988U)
+				{
+					if (num != 509136997U)
+					{
+						if (num == 1033217988U)
+						{
+							if (name == "TaurianConcordat")
+							{
+								flag = true;
+								this.currentFactionObj = Object.Instantiate<GameObject>(this.factionTaurianObj, base.transform, false);
+							}
+						}
+					}
+					else if (name == "MagistracyOfCanopus")
+					{
+						flag = true;
+						this.currentFactionObj = Object.Instantiate<GameObject>(this.factionMagistracyObj, base.transform, false);
+					}
+				}
+				else if (num != 1913027294U)
+				{
+					if (num == 2084391550U)
+					{
+						if (name == "AuriganPirates")
+						{
+							flag = true;
+							this.currentFactionObj = Object.Instantiate<GameObject>(this.factionPiratesObj, base.transform, false);
+						}
+					}
+				}
+				else if (name == "Liao")
+				{
+					flag = true;
+					this.currentFactionObj = Object.Instantiate<GameObject>(this.factionLiaoObj, base.transform, false);
+				}
+			}
+			else if (num <= 2876585975U)
+			{
+				if (num != 2682248937U)
+				{
+					if (num == 2876585975U)
+					{
+						if (name == "Marik")
+						{
+							flag = true;
+							this.currentFactionObj = Object.Instantiate<GameObject>(this.factionMarikObj, base.transform, false);
+						}
+					}
+				}
+				else if (name == "Steiner")
+				{
+					flag = true;
+					this.currentFactionObj = Object.Instantiate<GameObject>(this.factionSteinerObj, base.transform, false);
+				}
+			}
+			else if (num != 3566157670U)
+			{
+				if (num == 4235379147U)
+				{
+					if (name == "Kurita")
+					{
+						flag = true;
+						this.currentFactionObj = Object.Instantiate<GameObject>(this.factionKuritaObj, base.transform, false);
+					}
+				}
+			}
+			else if (name == "Davion")
+			{
+				flag = true;
+				this.currentFactionObj = Object.Instantiate<GameObject>(this.factionDavionObj, base.transform, false);
+			}
+			if (flag)
+			{
+				this.SetStarVisibility(false);
+			}
+		}
+
+		// Token: 0x06008AB3 RID: 35507 RVA: 0x00236790 File Offset: 0x00234990
+		public void SetBlackMarket(bool state)
+		{
+			if (!state)
+			{
+				if (this.currentBlackMarketObj != null)
+				{
+					this.currentBlackMarketObj.SetActive(false);
+					Object.Destroy(this.currentBlackMarketObj);
+					this.currentBlackMarketObj = null;
+				}
+			}
+			else if (this.currentBlackMarketObj == null)
+			{
+				this.currentBlackMarketObj = Object.Instantiate<GameObject>(this.blackMarketObj, base.transform, false);
+			}
+			if (state)
+			{
+				this.SetStarVisibility(false);
+			}
+		}
+
+		// Token: 0x06008AB4 RID: 35508 RVA: 0x00236800 File Offset: 0x00234A00
+		public void SetBiome(Biome.BIOMESKIN theBiome)
+		{
+			this.currentlyShowingBiome = theBiome;
+			switch (theBiome)
+			{
+			case Biome.BIOMESKIN.UNDEFINED:
+			case Biome.BIOMESKIN.generic:
+				this.highlightObjSelected = null;
+				return;
+			case Biome.BIOMESKIN.highlandsSpring:
+			case Biome.BIOMESKIN.highlandsFall:
+			case Biome.BIOMESKIN.lowlandsSpring:
+			case Biome.BIOMESKIN.lowlandsFall:
+			case Biome.BIOMESKIN.lowlandsCoastal:
+				this.highlightObjSelected = this.biome_NormalObj;
+				break;
+			case Biome.BIOMESKIN.desertParched:
+			case Biome.BIOMESKIN.badlandsParched:
+				this.highlightObjSelected = this.biome_HeatedObj;
+				break;
+			case Biome.BIOMESKIN.lunarVacuum:
+				this.highlightObjSelected = this.biome_VacuumObj;
+				break;
+			case Biome.BIOMESKIN.martianVacuum:
+				this.highlightObjSelected = this.biome_VacuumPartialObj;
+				break;
+			case Biome.BIOMESKIN.polarFrozen:
+				this.highlightObjSelected = this.biome_PolarObj;
+				break;
+			case Biome.BIOMESKIN.tundraFrozen:
+				this.highlightObjSelected = this.biome_CooledObj;
+				break;
+			case Biome.BIOMESKIN.jungleTropical:
+				this.highlightObjSelected = this.biome_TropicalObj;
+				break;
+			case Biome.BIOMESKIN.urbanHighTech:
+				this.highlightObjSelected = this.biome_UrbanObj;
+				break;
+			}
+			this.priorityStoreFilter = null;
+		}
+
+		// Token: 0x06008AB5 RID: 35509 RVA: 0x002368D7 File Offset: 0x00234AD7
+		public void SetStore(string store)
+		{
+			this.priorityStoreFilter = store;
+			if (!string.IsNullOrEmpty(this.priorityStoreFilter))
+			{
+				this.highlightObjSelected = this.store_PriorityObj;
+				return;
+			}
+			this.highlightObjSelected = null;
+		}
+
+		// Token: 0x06008AB6 RID: 35510 RVA: 0x00236904 File Offset: 0x00234B04
+		public void ShowCurrentHighlightedObject()
+		{
+			if (this.currentHighlightObj != null)
+			{
+				Object.Destroy(this.currentHighlightObj);
+				this.currentHighlightObj = null;
+			}
+			if (this.highlightObjSelected != null)
+			{
+				this.currentHighlightObj = Object.Instantiate<GameObject>(this.highlightObjSelected, base.transform, false);
+			}
+			if (!string.IsNullOrEmpty(this.priorityStoreFilter) || (this.currentlyShowingBiome != Biome.BIOMESKIN.generic && this.currentlyShowingBiome != Biome.BIOMESKIN.UNDEFINED))
+			{
+				this.starInner.gameObject.SetActive(false);
+				this.starInnerUnvisited.gameObject.SetActive(false);
+			}
+		}
+
+		// Token: 0x06008AB7 RID: 35511 RVA: 0x00236997 File Offset: 0x00234B97
+		public void Selected()
+		{
+			if (this.activeCoroutine != null)
+			{
+				base.StopCoroutine(this.activeCoroutine);
+			}
+			this.activeCoroutine = this.SelectRoutine();
+			base.StartCoroutine(this.activeCoroutine);
+		}
+
+		// Token: 0x06008AB8 RID: 35512 RVA: 0x002369C6 File Offset: 0x00234BC6
+		public void Deselected()
+		{
+			if (this.activeCoroutine != null)
+			{
+				base.StopCoroutine(this.activeCoroutine);
+			}
+			this.activeCoroutine = this.DeselectRoutine();
+			base.StartCoroutine(this.activeCoroutine);
+		}
+
+		// Token: 0x06008AB9 RID: 35513 RVA: 0x002369F5 File Offset: 0x00234BF5
+		private IEnumerator DeselectRoutine()
+		{
+			this.IsSelected = false;
+			Vector3 scale = this.starOuter.transform.localScale;
+			Vector3 angle = this.starOuter.transform.localEulerAngles;
+			float startTime = Time.time;
+			float endTime = startTime + 0.2f;
+			float t = startTime;
+			float targetScale = this.deselectedScale;
+			if (this.beenVisited)
+			{
+				targetScale = this.visitedScale;
+			}
+			while (t < endTime)
+			{
+				float num = (t - startTime) / 0.2f;
+				num = Mathf.SmoothStep(0f, 1f, num);
+				float num2 = Mathf.Lerp(scale.x, targetScale, num);
+				float num3 = Mathf.Lerp(angle.z, 0f, num);
+				this.starOuter.transform.localScale = new Vector3(num2, num2, num2);
+				this.starOuter.transform.localEulerAngles = new Vector3(0f, 0f, num3);
+				t += Time.deltaTime;
+				yield return null;
+			}
+			this.starOuter.transform.localScale = new Vector3(targetScale, targetScale, targetScale);
+			this.starOuter.transform.localEulerAngles = new Vector3(0f, 0f, 0f);
+			this.activeCoroutine = null;
+			yield break;
+		}
+
+		// Token: 0x06008ABA RID: 35514 RVA: 0x00236A04 File Offset: 0x00234C04
+		private IEnumerator SelectRoutine()
+		{
+			this.IsSelected = true;
+			Vector3 scale = this.starOuter.transform.localScale;
+			Vector3 angle = this.starOuter.transform.localEulerAngles;
+			float startTime = Time.time;
+			float endTime = startTime + 0.2f;
+			float t = startTime;
+			while (t < endTime)
+			{
+				float num = (t - startTime) / 0.2f;
+				num = Mathf.SmoothStep(0f, 1f, num);
+				float num2 = Mathf.Lerp(scale.x, this.selectedScale, num);
+				float num3 = Mathf.Lerp(angle.z, 90f, num);
+				this.starOuter.transform.localScale = new Vector3(num2, num2, num2);
+				this.starOuter.transform.localEulerAngles = new Vector3(0f, 0f, num3);
+				t += Time.deltaTime;
+				yield return null;
+			}
+			this.starOuter.transform.localScale = new Vector3(this.selectedScale, this.selectedScale, this.selectedScale);
+			this.starOuter.transform.localEulerAngles = new Vector3(0f, 0f, 90f);
+			this.activeCoroutine = null;
+			yield break;
+		}
+
+		// Token: 0x040055A1 RID: 21921
+		private static MaterialPropertyBlock _mpb;
+
+		// Token: 0x040055A2 RID: 21922
+		public StarSystemNode system;
+
+		// Token: 0x040055A3 RID: 21923
+		public Renderer starInner;
+
+		// Token: 0x040055A4 RID: 21924
+		public Renderer starOuter;
+
+		// Token: 0x040055A5 RID: 21925
+		public Renderer starInnerUnvisited;
+
+		// Token: 0x040055A6 RID: 21926
+		public Renderer argoMarker;
+
+		// Token: 0x040055A7 RID: 21927
+		public Renderer notificationMarker;
+
+		// Token: 0x040055A8 RID: 21928
+		public Renderer fuelMarker;
+
+		// Token: 0x040055A9 RID: 21929
+		public BoxCollider interactionCollider;
+
+		// Token: 0x040055AA RID: 21930
+		public GameObject flashpointAvailableObj;
+
+		// Token: 0x040055AB RID: 21931
+		public GameObject flashpointActiveObj;
+
+		// Token: 0x040055AC RID: 21932
+		public GameObject flashpointAvailableLocal;
+
+		// Token: 0x040055AD RID: 21933
+		public GameObject flashpointActiveLocal;
+
+		// Token: 0x040055AE RID: 21934
+		public GameObject flashpointMiniCampaignObj;
+
+		// Token: 0x040055AF RID: 21935
+		public GameObject flashpointMiniCampaignLocal;
+
+		// Token: 0x040055B0 RID: 21936
+		public GameObject factionSteinerObj;
+
+		// Token: 0x040055B1 RID: 21937
+		public GameObject factionKuritaObj;
+
+		// Token: 0x040055B2 RID: 21938
+		public GameObject factionDavionObj;
+
+		// Token: 0x040055B3 RID: 21939
+		public GameObject factionMarikObj;
+
+		// Token: 0x040055B4 RID: 21940
+		public GameObject factionLiaoObj;
+
+		// Token: 0x040055B5 RID: 21941
+		public GameObject factionMagistracyObj;
+
+		// Token: 0x040055B6 RID: 21942
+		public GameObject factionTaurianObj;
+
+		// Token: 0x040055B7 RID: 21943
+		public GameObject factionPiratesObj;
+
+		// Token: 0x040055B8 RID: 21944
+		public GameObject blackMarketObj;
+
+		// Token: 0x040055B9 RID: 21945
+		public GameObject currentFactionObj;
+
+		// Token: 0x040055BA RID: 21946
+		public GameObject currentBlackMarketObj;
+
+		// Token: 0x040055BB RID: 21947
+		public GameObject biome_VacuumPartialObj;
+
+		// Token: 0x040055BC RID: 21948
+		public GameObject biome_VacuumObj;
+
+		// Token: 0x040055BD RID: 21949
+		public GameObject biome_UrbanObj;
+
+		// Token: 0x040055BE RID: 21950
+		public GameObject biome_TropicalObj;
+
+		// Token: 0x040055BF RID: 21951
+		public GameObject biome_PolarObj;
+
+		// Token: 0x040055C0 RID: 21952
+		public GameObject biome_NormalObj;
+
+		// Token: 0x040055C1 RID: 21953
+		public GameObject biome_HeatedObj;
+
+		// Token: 0x040055C2 RID: 21954
+		public GameObject biome_CooledObj;
+
+		// Token: 0x040055C3 RID: 21955
+		public GameObject store_PriorityObj;
+
+		// Token: 0x040055C4 RID: 21956
+		protected GameObject currentHighlightObj;
+
+		// Token: 0x040055C7 RID: 21959
+		public Color systemColor;
+
+		// Token: 0x040055C8 RID: 21960
+		private IEnumerator activeCoroutine;
+
+		// Token: 0x040055C9 RID: 21961
+		public static Vector3 NormalColliderSize = new Vector3(4f, 4f, 0.1f);
+
+		// Token: 0x040055CA RID: 21962
+		public static Vector3 FlashpointColliderSize = new Vector3(4f, 4f, 0.1f);
+
+		// Token: 0x040055CB RID: 21963
+		private bool beenVisited;
+
+		// Token: 0x040055CC RID: 21964
+		private float deselectedScale;
+
+		// Token: 0x040055CD RID: 21965
+		private float selectedScale = 6f;
+
+		// Token: 0x040055CE RID: 21966
+		private float visitedScale = 4f;
+
+		// Token: 0x040055CF RID: 21967
+		private string priorityStoreFilter;
+
+		// Token: 0x040055D0 RID: 21968
+		private Biome.BIOMESKIN currentlyShowingBiome;
+
+		// Token: 0x040055D1 RID: 21969
+		private GameObject highlightObjSelected;
+	}
+}
